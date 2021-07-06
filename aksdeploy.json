@@ -1,0 +1,272 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "clusterName": {
+            "type": "String",
+            "metadata": {
+                "description": "Name of the cluster e.g. prd-kub"
+            }
+        },
+        "location": {
+            "defaultValue": "[resourceGroup().location]",
+            "type": "String",
+            "metadata": {
+                "description": "The Azure location of the AKS resource."
+            }
+        },
+        "osDiskSizeGB": {
+            "defaultValue": 0,
+            "minValue": 0,
+            "maxValue": 1023,
+            "type": "Int",
+            "metadata": {
+                "description": "Disk size (in GB) to provision for each of the agent pool nodes. This value ranges from 0 to 1023. Specifying 0 will apply the default disk size for that agentVMSize."
+            }
+        },
+        "agentCount": {
+            "defaultValue": 3,
+            "minValue": 1,
+            "maxValue": 50,
+            "type": "Int",
+            "metadata": {
+                "description": "The number of agent nodes for the cluster. Production workloads have a recommended minimum of 3."
+            }
+        },
+        "agentVMSize": {
+            "defaultValue": "Standard_D2_v3",
+            "type": "String",
+            "metadata": {
+                "description": "The size of the Virtual Machine."
+            }
+        },
+        "osType": {
+            "defaultValue": "Linux",
+            "allowedValues": [
+                "Linux"
+            ],
+            "type": "String",
+            "metadata": {
+                "description": "The type of operating system."
+            }
+        },
+        "kubernetesVersion": {
+            "type": "String",
+            "metadata": {
+                "description": "Version number of Kubernetes e.g. 1.8.7"
+            }
+        },
+        "environment": {
+            "type": "String",
+            "metadata": {
+                "description": "Environment for the cluster e.g. production"
+            }
+        },
+        "dnsPrefix": {
+            "type": "String",
+            "metadata": {
+                "description": "DNS prefix for the cluster e.g. prd"
+            }
+        },
+        "enableHttpApplicationRouting": {
+            "defaultValue": false,
+            "type": "Bool",
+            "metadata": {
+                "description": "boolean flag to turn on and off of http application routing"
+            }
+        },
+        "networkPlugin": {
+            "defaultValue": "azure",
+            "allowedValues": [
+                "azure",
+                "kubenet"
+            ],
+            "type": "String",
+            "metadata": {
+                "description": "Network plugin used for building Kubernetes network."
+            }
+        },
+         "zone": {
+		  "type": "array",
+		  "defaultValue":  [
+                "1",
+                "2",
+                "3"
+            ],
+		  "metadata": {
+			"description": "Zone number for the virtual machine"
+		  }
+		},
+        "maxPods": {
+            "defaultValue": 30,
+            "type": "Int",
+            "metadata": {
+                "description": "Maximum number of pods that can run on a node."
+            }
+        },
+        "enableRBAC": {
+            "defaultValue": true,
+            "type": "Bool",
+            "metadata": {
+                "description": "boolean flag to turn on and off of RBAC"
+            }
+        },
+        "maxCount": {
+            "defaultValue": 1,
+            "type": "Int",
+            "metadata": {
+                "description": "Maximum number of nodes."
+            }
+        },
+        "minCount": {
+            "defaultValue": 1,
+            "type": "Int",
+            "metadata": {
+                "description": "Minumum number of nodes."
+            }
+        },
+        "enableAutoScaling": {
+            "defaultValue": true,
+            "type": "Bool",
+            "metadata": {
+                "description": "boolean flag to turn on and off of AutoScale"
+            }
+        },
+        "existingVirtualNetworkName": {
+            "type": "String",
+            "metadata": {
+                "description": "Name of an existing VNET that will contain this AKS deployment."
+            }
+        },
+        "existingVirtualNetworkResourceGroup": {
+            "type": "String",
+            "metadata": {
+                "description": "Name of the existing VNET resource group"
+            }
+        },
+        "existingSubnetName": {
+            "type": "String",
+            "metadata": {
+                "description": "Subnet name that will contain the App Service Environment"
+            }
+        },
+        "serviceCidr": {
+            "defaultValue": "10.0.0.0/16",
+            "type": "String",
+            "metadata": {
+                "description": "A CIDR notation IP range from which to assign service cluster IPs."
+            }
+        },
+        "dnsServiceIP": {
+            "defaultValue": "10.0.0.10",
+            "type": "String",
+            "metadata": {
+                "description": "Containers DNS server IP address."
+            }
+        },
+        "dockerBridgeCidr": {
+            "defaultValue": "172.17.0.1/16",
+            "type": "String",
+            "metadata": {
+                "description": "A CIDR notation IP for Docker bridge."
+            }
+        },
+        "loadBalancerSku": {
+            "defaultValue": "Standard",
+            "type": "String",
+            "metadata": {
+                "description": "Load Balancer SKU"
+            }
+        },
+        "poolName": {
+            "type": "String",
+            "metadata": {
+                "description": "Name of server pool for the cluster e.g. prdpool"
+            }
+        },
+        "nodeCount": {
+            "type": "Int",
+            "metadata": {
+                "description": "Number of nodes"
+            }
+        }
+    },
+    "variables": {
+        "vnetSubnetId": "[resourceId(parameters('existingVirtualNetworkResourceGroup'),'Microsoft.Network/virtualNetworks/subnets',parameters('existingVirtualNetworkName'),parameters('existingSubnetName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.ContainerService/managedClusters",
+            "apiVersion": "2020-09-01",
+            "name": "[parameters('clusterName')]",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "environment": "[parameters('environment')]"
+            },
+            "sku": {
+                "name": "Basic",
+                "tier": "Free"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "kubernetesVersion": "[parameters('kubernetesVersion')]",
+                "enableRBAC": "[parameters('enableRBAC')]",
+                "dnsPrefix": "[parameters('dnsPrefix')]",
+                "agentPoolProfiles": [
+                    {
+                        "name": "[parameters('poolName')]",
+                        "osDiskSizeGB": "[parameters('osDiskSizeGB')]",
+                        "count": "[parameters('nodeCount')]",
+                        "vmSize": "[parameters('agentVMSize')]",
+                        "availabilityZones": [
+                                                "1",
+                                                "2",
+                                                "3"
+                                            ],
+                        "type": "VirtualMachineScaleSets",
+                        "dnsPrefix": "[parameters('poolName')]",
+                        "osType": "[parameters('osType')]",
+                        "storageProfile": "ManagedDisks",
+                        "maxCount": "[parameters('maxCount')]",
+                        "minCount": "[parameters('minCount')]",
+                        "enableAutoScaling": "[parameters('enableAutoScaling')]",
+                        "vnetSubnetID": "[variables('vnetSubnetID')]",
+                        "mode" : "System",
+                        "maxPods": "[parameters('maxPods')]"
+                    }
+                ],
+                "linuxProfile": {
+                    "adminUsername": "azureuser",
+                    "ssh": {
+                        "publicKeys": [
+                            {
+                                "keyData": ""
+                            }
+                        ]
+                    }
+                },
+                "addonProfiles": {
+                    "httpApplicationRouting": {
+                        "enabled": "[parameters('enableHttpApplicationRouting')]"
+                    },
+                    "omsagent": {
+                        "enabled": true,
+                        "config": {
+                            "logAnalyticsWorkspaceResourceID": "/workspaces/loganalytics"
+                        }
+                    }
+                },
+                "networkProfile": {
+                    "networkPlugin": "azure",
+                    "serviceCidr": "[parameters('serviceCidr')]",
+                    "dnsServiceIP": "[parameters('dnsServiceIP')]",
+                    "dockerBridgeCidr": "[parameters('dockerBridgeCidr')]",
+                    "loadBalancerSku":"[parameters('loadBalancerSku')]"
+                }
+            }
+        }
+    ],
+    "outputs": {}
+}

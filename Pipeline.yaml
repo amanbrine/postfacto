@@ -1,0 +1,166 @@
+# AKS deployment pipeline
+
+trigger:
+  branches:
+    include:
+    - master
+  paths:
+    include:
+    - /*
+
+variables:
+  aksTest: 'testname'
+  resourcegroupName: '$(resourcegroupName)'
+  acr.name: testacr
+  acr.repo.name: testacr/postfacto
+
+stages:
+- stage: DeployWebApp
+  jobs:
+  - job: 'DeployToTest'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps: 
+    #DEPLOY Webapp IN TEST
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: 'TestConnection'
+        subscriptionId: '12345-****-****-****-****'
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: 'TestRg'
+        location: ' West'
+        templateLocation: 'Linked artifact'
+        csmFile: '/webappDeploy.json'
+        csmParametersFile: '/webappDeploy-parameter.json'
+        overrideParameters: ''
+        deploymentMode: 'Incremental'
+    # DEPLOY appgateway IN TEST   
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: 'TestConnection'
+        subscriptionId: '12345-****-****-****-****'
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: 'TestRg'
+        location: ' West'
+        templateLocation: 'Linked artifact'
+        csmFile: '/appgateway.json'
+        csmParametersFile: '/appgateway-parameter.json'
+        overrideParameters: ''
+        deploymentMode: 'Incremental'
+    # DEPLOY sqlserver
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: 'TestConnection'
+        subscriptionId: '12345-****-****-****-****'
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: 'TestRg'
+        location: ' West'
+        templateLocation: 'Linked artifact'
+        csmFile: '/sqlserver.json'
+        csmParametersFile: '/sqlserver-parameter.json'
+        overrideParameters: ''
+        deploymentMode: 'Incremental'
+        # DEPLOY Firewall rules
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: 'TestConnection'
+        subscriptionId: '12345-****-****-****-****'
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: 'TestRg'
+        location: ' West'
+        templateLocation: 'Linked artifact'
+        csmFile: '/firewallrules.json'
+        csmParametersFile: '/firewallrules-parameter.json'
+        overrideParameters: ''
+        deploymentMode: 'Incremental'
+        # DEPLOY Aks cluster
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: 'TestConnection'
+        subscriptionId: '12345-****-****-****-****'
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: 'TestRg'
+        location: ' West'
+        templateLocation: 'Linked artifact'
+        csmFile: '/aks.json'
+        csmParametersFile: '/aks-parameter.json'
+        overrideParameters: ''
+        deploymentMode: 'Incremental'
+
+        #Get the latest chart from GitHub
+        resources:
+        repositories:
+          - repository: helmrepo
+            type: github
+            name: pivotal/postfacto
+            endpoint: github
+
+        #nstalling Helm 3 on the agent
+  - task: HelmInstaller@0
+          displayName: install helm
+          inputs: 
+          helmVersion: 'latest'
+          installKubectl: false
+        
+         #Login to the ACR using Helm
+  - script: |
+        helm registry login $(acr.name).azurecr.io --username $(acr.push.username) --password $(acr.push.password)
+    displayName: login to acr using helm
+
+  #Save and push the chart to ACR
+  - script: |
+        helm chart save $(build.sourcesdirectory)/src/azure-vote-helm-chart/ $(acr.name).azurecr.io/$(acr.repo.name):latest
+    displayName: save the chart and set the alias
+
+    #Pull the latest version of chart from ACR
+- stage: cd
+      displayName: CD
+      dependsOn: ci
+    jobs:
+    - deployment: helm_publish_aks
+      displayName: deploy to aks
+      environment: 
+        name: PROD
+        resourceName: helmdemo
+        resourceType: Kubernetes
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - task: HelmInstaller@0
+              displayName: install helm
+              inputs:
+                helmVersion: 'latest'
+                installKubectl: false
+
+            - script: |
+                echo "$(acr.pull.password)" | helm registry login $(acr.name).azurecr.io --username $(acr.pull.username) --password-stdin
+              displayName: login to acr using helm
+
+            - bash: |
+                  helm chart pull $(acr.name).azurecr.io/$(acr.repo.name):latest
+              displayName: get helm chart on agent
+            
+            - bash: |
+                helm chart export $(acr.name).azurecr.io/$(acr.repo.name):latest --destination $(build.stagingdirectory)
+              displayName: export the chart to folder
+
+      #Deploy the chart to AKS
+  - task: HelmDeploy@0
+      displayName: deploy chart to aks
+      inputs:
+      connectionType: 'Azure Resource Manager'
+      azureSubscription: '$(azure.service.connection)'
+      azureResourceGroup: 'demos'
+      kubernetesCluster: 'aksdemoutkarsh'
+      namespace: 'helmdemo'
+      command: 'upgrade'
+      chartType: 'FilePath'
+      chartPath: '$(build.stagingdirectory)/azure-vote/'
+      releaseName: 'helmdemo'
+      arguments: '--create-namespace --install'
